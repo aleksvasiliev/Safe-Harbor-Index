@@ -484,7 +484,7 @@ const WEIGHTS = {
   short:       { geography:.18, food:.14, stability:.14, neighbors:.11, military:.09, terrorism:.10, resource:.07, nuclear:.04, climate:.05, safety:.08 },
   long:        { immigration:.11, stability:.10, cost:.09, economy:.07, food:.07, geography:.07, climate:.06, terrorism:.07, neighbors:.06, military:.03, resource:.02, employment:.05, business:.04, taxes:.04, safety:.06, health:.06 },
   long_crypto: { immigration:.10, stability:.10, cost:.08, economy:.07, food:.06, geography:.06, climate:.05, terrorism:.06, neighbors:.04, military:.03, resource:.02, employment:.05, business:.04, taxes:.04, safety:.05, health:.05, crypto:.10 },
-  tourism:     { safety:.28, terrorism:.22, stability:.18, climate:.12, health:.10, cost:.06, immigration:.04 },
+  tourism:     { safety:.32, terrorism:.12, stability:.16, climate:.14, health:.12, cost:.08, immigration:.06 },
 };
 
 const PARAM_LABELS = {
@@ -552,10 +552,10 @@ function getColor(score) {
 
 function getVerdict(score, mode) {
   if (mode === 'tourism') {
-    if (score >= 8)   return { cls:'v-green',  text:'Safe destination. Low crime, stable, good healthcare — go enjoy it.' };
-    if (score >= 6.5) return { cls:'v-yellow', text:'Generally safe. Exercise normal precautions, check current advisories.' };
-    if (score >= 5)   return { cls:'v-orange', text:'Elevated risk. Research carefully, avoid certain areas, check FCO/State Dept advisories.' };
-    return { cls:'v-red', text:'Avoid. Active conflict, high crime, or serious health risks for travelers.' };
+    if (score >= 7.5) return { cls:'v-green',  text:'Excellent destination. Safe, welcoming, great infrastructure for travelers.' };
+    if (score >= 6)   return { cls:'v-yellow', text:'Good destination. Exercise normal precautions — standard advice for any trip abroad.' };
+    if (score >= 4.5) return { cls:'v-orange', text:'Use caution. Research specific areas, check current FCO/State Dept advisories before visiting.' };
+    return { cls:'v-red', text:'Not recommended. Active conflict, very high crime, or serious health risks for travelers.' };
   }
   if (score >= 8)   return { cls:'v-green',  text: mode==='short' ? 'Excellent short-term refuge — high stability, far from conflict zones.' : 'Top-tier relocation destination — stable, accessible, affordable.' };
   if (score >= 6.5) return { cls:'v-yellow', text: mode==='short' ? 'Good option. Some risk factors but manageable for a months-long stay.' : 'Solid long-term destination with minor trade-offs.' };
@@ -691,7 +691,7 @@ function openPanel(c) {
       <div class="panel-score-num" style="color:${getColor(score)}">${score.toFixed(1)}</div>
       <div class="panel-score-denom">/10</div>
     </div>
-    <div class="panel-mode-label">${currentMode === 'short' ? 'Short-term refuge score' : 'Long-term relocation score'}</div>
+    <div class="panel-mode-label">${currentMode === 'short' ? 'Short-term refuge score' : currentMode === 'tourism' ? 'Tourism safety score' : 'Long-term relocation score'}</div>
     <div class="verdict ${verdict.cls}">${verdict.text}</div>
     <div class="divider"></div>
     <div class="params-heading">Parameter breakdown</div>
