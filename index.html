@@ -617,9 +617,9 @@ async function initMap() {
     .datum(crimeaGeo)
     .attr('class', 'crimea-disputed')
     .attr('d', path)
-    .attr('fill', '#9ca3af')
-    .attr('stroke', '#6b7280')
-    .attr('stroke-width', 0.6)
+    .attr('fill', getColor(computeScore(COUNTRIES['804'], currentMode)))
+    .attr('stroke', '#fff')
+    .attr('stroke-width', 0.4)
     .style('cursor', 'default')
     .on('mousemove', function(ev) {
       const tt = document.getElementById('tt');
@@ -648,6 +648,7 @@ function refreshMapColors() {
     const c = COUNTRIES[d.id];
     return c ? getColor(computeScore(c, currentMode)) : '#1a1d26';
   });
+  svg.select('.crimea-disputed').attr('fill', getColor(computeScore(COUNTRIES['804'], currentMode)));
   if (selectedId && COUNTRIES[selectedId]) openPanel(COUNTRIES[selectedId]);
 }
 
