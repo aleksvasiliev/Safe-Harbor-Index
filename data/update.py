@@ -120,15 +120,10 @@ def get_world_bank_data(force_refresh: bool) -> dict:
 
 
 def get_numbeo_data(api_key: str, force_refresh: bool) -> dict:
-    if not api_key:
-        if NUMBEO_CACHE.exists():
-            print(f"Using cached Numbeo data ({NUMBEO_CACHE.name})")
-            return load_json(NUMBEO_CACHE)
-        return {}
     if not force_refresh and is_cache_fresh(NUMBEO_CACHE):
         print(f"Using cached Numbeo data ({NUMBEO_CACHE.name})")
         return load_json(NUMBEO_CACHE)
-    print("Fetching Numbeo data...")
+    print("Scraping Numbeo data...")
     return fetch_numbeo(api_key=api_key, cache_path=str(NUMBEO_CACHE))
 
 
