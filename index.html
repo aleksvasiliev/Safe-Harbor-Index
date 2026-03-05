@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Safe Harbor Index</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson@3"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --nav-h: 54px;
+    --panel-w: 400px;
+    --bg: #f0f4f8;
+    --border: rgba(0,0,0,0.07);
+    --text: #0f172a;
+    --muted: #94a3b8;
+    --green: #16a34a;
+    --yellow: #b45309;
+    --orange: #c2410c;
+    --red: #dc2626;
+    --score-green: #22c55e;
+    --score-yellow: #eab308;
+    --score-orange: #f97316;
+    --score-red: #ef4444;
+  }
+
+  html, body { height: 100%; overflow: hidden; background: #c8daea; color: var(--text); font-family: 'Inter', system-ui, sans-serif; }
+
+  /* ── NAV ── */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; height: var(--nav-h);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 20px;
+    background: rgba(220,234,244,0.88); backdrop-filter: blur(24px) saturate(180%);
+    border-bottom: 1px solid var(--border);
+    z-index: 500;
+  }
+  .logo { font-size: 14px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); }
+  .logo em { color: #16a34a; font-style: normal; }
+  .logo small { font-size: 10px; font-weight: 400; color: var(--muted); margin-left: 8px; letter-spacing: 0.03em; text-transform: uppercase; }
+
+  .tabs { display: flex; background: rgba(0,0,0,0.05); border-radius: 10px; padding: 3px; gap: 2px; }
+  .tab {
+    padding: 5px 16px; border-radius: 8px; background: none; border: none;
+    color: var(--muted); font-size: 13px; font-weight: 500; cursor: pointer;
+    transition: all 0.18s; letter-spacing: -0.01em; font-family: inherit;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { background: #fff; color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+
+  /* ── VIEWS ── */
+  .view { display: none; }
+
+  /* ── MAP VIEW ── */
+  #map-view { position: fixed; top: var(--nav-h); left: 0; right: 0; bottom: 0; }
+  #map-container { width: 100%; height: 100%; }
+  #map-container svg { width: 100%; height: 100%; display: block; }
+  .sphere    { fill: #c8daea; }
+  .graticule { fill: none; stroke: rgba(0,0,0,0.06); stroke-width: 0.4; }
+  .country   { stroke: rgba(255,255,255,0.6); stroke-width: 0.5; cursor: pointer; transition: filter 0.12s; }
+  .country:hover   { filter: brightness(0.88); stroke: rgba(0,0,0,0.3); stroke-width: 0.8; }
+  .country.selected { stroke: #0f172a; stroke-width: 1.5; filter: brightness(0.85); }
+  .country.no-data  { fill: #d6dce5; cursor: default; }
+  .country.no-data:hover { filter: brightness(0.94); }
+
+  /* ── TOOLTIP ── */
+  .tt {
+    position: absolute; pointer-events: none;
+    background: rgba(255,255,255,0.92); backdrop-filter: blur(16px);
+    border: 1px solid rgba(0,0,0,0.08); border-radius: 10px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+    padding: 9px 13px; white-space: nowrap; z-index: 50;
+    opacity: 0; transition: opacity 0.1s; font-size: 12px;
+  }
+  .tt-name   { font-weight: 600; color: #0f172a; margin-bottom: 3px; }
+  .tt-score  { font-size: 13px; font-weight: 700; }
+  .tt-nodata { color: var(--muted); font-size: 11px; }
+
+  /* ── MAP FLOATING CONTROLS ── */
+  .map-bottom {
+    position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 10px; z-index: 100;
+  }
+  .scenario-switch {
+    display: flex;
+    background: rgba(255,255,255,0.78); backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(0,0,0,0.08); border-radius: 12px; padding: 3px; gap: 2px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  }
+  .mode-btn {
+    padding: 6px 18px; border-radius: 9px; background: none; border: none;
+    color: var(--muted); font-size: 12px; font-weight: 500; cursor: pointer;
+    transition: all 0.18s; white-space: nowrap; font-family: inherit;
+  }
+  .mode-btn.active { background: #16a34a; color: #fff; font-weight: 600; box-shadow: 0 1px 4px rgba(22,163,74,0.35); }
+  .mode-btn:not(.active):hover { color: #0f172a; }
+
+  .legend {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(255,255,255,0.78); backdrop-filter: blur(12px);
+    border: 1px solid rgba(0,0,0,0.07); border-radius: 8px; padding: 6px 12px;
+    font-size: 10px; color: var(--muted); letter-spacing: 0.04em;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.06);
+  }
+  .legend-bar { width: 100px; height: 6px; border-radius: 3px; background: linear-gradient(to right, #ef4444, #f97316, #eab308, #22c55e); }
+  .legend span:first-child { color: #ef4444; font-weight: 500; }
+  .legend span:last-child  { color: #16a34a; font-weight: 500; }
+
+  /* ── SIDE PANEL (glass) ── */
+  #panel {
+    position: fixed; top: var(--nav-h); right: 0;
+    width: var(--panel-w); height: calc(100vh - var(--nav-h));
+    background: rgba(255,255,255,0.88);
+    backdrop-filter: blur(40px) saturate(180%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    border-left: 1px solid rgba(255,255,255,0.95);
+    box-shadow: -12px 0 48px rgba(0,0,0,0.12), inset 1px 0 0 rgba(255,255,255,0.8);
+    transform: translateX(100%); transition: transform 0.32s cubic-bezier(0.4,0,0.2,1);
+    z-index: 400; overflow-y: auto; overflow-x: hidden;
+  }
+  #panel.open { transform: translateX(0); }
+
+  .panel-close {
+    position: sticky; top: 0;
+    display: flex; justify-content: flex-end;
+    padding: 14px 16px 0;
+    background: rgba(255,255,255,0.88); backdrop-filter: blur(20px);
+    z-index: 1;
+  }
+  .panel-close button {
+    background: rgba(0,0,0,0.06); border: none; border-radius: 8px;
+    color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1;
+    width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s;
+  }
+  .panel-close button:hover { background: rgba(0,0,0,0.1); color: #0f172a; }
+
+  .panel-body { padding: 8px 24px 32px; }
+  .panel-country { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; color: #0f172a; margin-bottom: 3px; }
+  .panel-region  { font-size: 12px; color: var(--muted); margin-bottom: 20px; }
+
+  .score-ring-wrap { display: flex; align-items: flex-end; gap: 10px; margin-bottom: 12px; }
+  .panel-score-num { font-size: 56px; font-weight: 800; letter-spacing: -0.04em; line-height: 1; }
+  .panel-score-denom { font-size: 20px; font-weight: 400; color: var(--muted); margin-bottom: 6px; }
+  .panel-mode-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 14px; }
+
+  .verdict {
+    font-size: 13px; padding: 10px 14px; border-radius: 10px;
+    line-height: 1.55; margin-bottom: 24px; border: 1px solid transparent;
+  }
+  .v-green  { background: rgba(22,163,74,0.08);  color: #15803d; border-color: rgba(22,163,74,0.18); }
+  .v-yellow { background: rgba(180,83,9,0.07);   color: #92400e; border-color: rgba(180,83,9,0.15); }
+  .v-orange { background: rgba(194,65,12,0.07);  color: #9a3412; border-color: rgba(194,65,12,0.15); }
+  .v-red    { background: rgba(220,38,38,0.07);  color: #991b1b; border-color: rgba(220,38,38,0.15); }
+
+  .params-heading { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 14px; }
+  .param-row { margin-bottom: 13px; }
+  .param-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+  .param-name { font-size: 12px; color: #1e293b; font-weight: 500; }
+  .param-val  { font-size: 12px; font-weight: 700; }
+  .param-track { height: 3px; background: rgba(0,0,0,0.1); border-radius: 2px; }
+  .param-fill  { height: 3px; border-radius: 2px; transition: width 0.5s cubic-bezier(0.4,0,0.2,1); }
+  .param-sub  { font-size: 10px; color: #64748b; margin-top: 3px; }
+
+  .divider { height: 1px; background: rgba(0,0,0,0.07); margin: 20px 0; }
+
+  /* ── TABLE VIEW ── */
+  #table-view { position: fixed; top: var(--nav-h); left: 0; right: 0; bottom: 0; overflow-y: auto; background: var(--bg); }
+  .tbl-wrap { padding: 28px 32px; max-width: 1100px; margin: 0 auto; }
+  .tbl-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
+  .tbl-title  { font-size: 17px; font-weight: 700; letter-spacing: -0.02em; color: #0f172a; }
+  .tbl-title span { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 8px; }
+  .tbl-search {
+    background: #fff; border: 1px solid var(--border); border-radius: 10px;
+    padding: 7px 14px; color: #0f172a; font-size: 13px; width: 220px; outline: none;
+    transition: border-color 0.15s; font-family: inherit;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .tbl-search:focus { border-color: rgba(22,163,74,0.5); box-shadow: 0 0 0 3px rgba(22,163,74,0.1); }
+  .tbl-search::placeholder { color: var(--muted); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    text-align: left; padding: 9px 12px;
+    color: var(--muted); font-size: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.07em;
+    border-bottom: 1px solid var(--border); cursor: pointer; white-space: nowrap; user-select: none;
+  }
+  thead th:hover { color: #0f172a; }
+  thead th.sort-asc::after  { content: ' ↑'; color: #16a34a; }
+  thead th.sort-desc::after { content: ' ↓'; color: #16a34a; }
+  tbody td { padding: 11px 12px; border-bottom: 1px solid rgba(0,0,0,0.04); vertical-align: middle; color: #0f172a; }
+  tbody tr { cursor: pointer; transition: background 0.1s; }
+  tbody tr:hover td { background: rgba(0,0,0,0.025); }
+  .rank  { color: var(--muted); font-size: 12px; width: 36px; }
+  .cname { font-weight: 500; }
+  .creg  { color: var(--muted); font-size: 12px; }
+  .spill {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 38px; height: 22px; border-radius: 6px;
+    font-weight: 700; font-size: 12px; letter-spacing: -0.01em;
+  }
+  .mbar-bg { display: inline-block; width: 56px; height: 4px; background: rgba(0,0,0,0.08); border-radius: 2px; vertical-align: middle; margin-left: 8px; }
+  .mbar    { display: inline-block; height: 4px; border-radius: 2px; }
+  .param-cell { font-size: 12px; color: #64748b; }
+
+  /* ── METHOD VIEW ── */
+  #method-view { position: fixed; top: var(--nav-h); left: 0; right: 0; bottom: 0; overflow-y: auto; background: var(--bg); }
+  .mth-wrap { padding: 40px 32px 64px; max-width: 820px; margin: 0 auto; }
+  .mth-h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.03em; color: #0f172a; margin-bottom: 8px; }
+  .mth-lead { font-size: 14px; color: #64748b; line-height: 1.75; margin-bottom: 36px; }
+  .mth-section { margin-bottom: 36px; }
+  .mth-h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 16px; }
+  .mth-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .mth-card { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+  .mth-card-name { font-size: 13px; font-weight: 600; margin-bottom: 5px; color: #0f172a; }
+  .mth-card-desc { font-size: 12px; color: #64748b; line-height: 1.55; }
+  .mth-card-src  { font-size: 11px; color: #16a34a; margin-top: 7px; }
+  .wt-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+  .wt-label { font-size: 12px; font-weight: 600; margin-bottom: 12px; }
+  .wt-row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid rgba(0,0,0,0.05); font-size: 13px; color: #334155; }
+  .wt-row:last-child { border: none; }
+  .wt-pct { font-weight: 600; color: #16a34a; font-size: 12px; }
+  .mth-host { background: rgba(22,163,74,0.06); border: 1px solid rgba(22,163,74,0.15); border-radius: 12px; padding: 18px 20px; font-size: 13px; line-height: 1.65; color: #334155; }
+  .mth-host h3 { font-size: 14px; font-weight: 600; margin-bottom: 10px; color: #16a34a; }
+  .mth-host code { background: rgba(0,0,0,0.06); padding: 2px 7px; border-radius: 5px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; }
+  .mth-host ol { padding-left: 20px; margin-top: 8px; color: #64748b; }
+  .mth-host ol li { margin-bottom: 4px; }
+  .disclaimer { background: rgba(220,38,38,0.04); border: 1px solid rgba(220,38,38,0.12); border-radius: 10px; padding: 14px 16px; font-size: 12px; color: #64748b; line-height: 1.65; }
+  .disclaimer strong { color: #dc2626; }
+</style>
+</head>
+<body>
+
+<!-- ── NAV ── -->
+<nav>
+  <div class="logo">
+    Safe <em>Harbor</em> Index
+    <small>2026 Edition</small>
+  </div>
+  <div class="tabs">
+    <button class="tab active" onclick="showView('map')">Map</button>
+    <button class="tab" onclick="showView('table')">Rankings</button>
+    <button class="tab" onclick="showView('method')">Methodology</button>
+  </div>
+</nav>
+
+<!-- ── MAP VIEW ── -->
+<div id="map-view" class="view">
+  <div id="map-container">
+    <div class="tt" id="tt">
+      <div class="tt-name" id="tt-name"></div>
+      <div id="tt-body"></div>
+    </div>
+  </div>
+  <div class="map-bottom">
+    <div class="scenario-switch">
+      <button class="mode-btn" onclick="setMode('short',this)">Short-term refuge</button>
+      <button class="mode-btn active" onclick="setMode('long',this)">Long-term relocation</button>
+    </div>
+    <div class="legend">
+      <span>High risk</span>
+      <div class="legend-bar"></div>
+      <span>Safe</span>
+    </div>
+  </div>
+</div>
+
+<!-- ── TABLE VIEW ── -->
+<div id="table-view" class="view">
+  <div class="tbl-wrap">
+    <div class="tbl-header">
+      <div class="tbl-title">Country Rankings <span id="tbl-count"></span></div>
+      <input class="tbl-search" id="tbl-search" placeholder="Search country…" oninput="buildTable()">
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th class="rank" onclick="sortTable('rank')">#</th>
+          <th onclick="sortTable('name')">Country</th>
+          <th onclick="sortTable('region')">Region</th>
+          <th onclick="sortTable('score')">Score</th>
+          <th onclick="sortTable('food')">Food</th>
+          <th onclick="sortTable('military')">Military</th>
+          <th onclick="sortTable('stability')">Stability</th>
+          <th onclick="sortTable('immigration')">Imm.</th>
+          <th onclick="sortTable('cost')">Cost</th>
+        </tr>
+      </thead>
+      <tbody id="tbl-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── METHOD VIEW ── -->
+<div id="method-view" class="view">
+  <div class="mth-wrap">
+    <div class="mth-h1">Methodology</div>
+    <div class="mth-lead">
+      The Safe Harbor Index evaluates countries across 14 parameters to identify
+      the most resilient destinations in the context of Middle East escalation —
+      specifically a scenario where Iran conflict triggers Strait of Hormuz blockade,
+      Gulf state collapse, and global resource shocks. Scores are drawn from
+      publicly available indices and expert assessments, updated Q1 2026.
+    </div>
+
+    <div class="mth-section">
+      <div class="mth-h2">14 Parameters</div>
+      <div class="mth-grid">
+        <div class="mth-card"><div class="mth-card-name">Food Security</div><div class="mth-card-desc">Domestic agricultural capacity relative to population needs. Can the country feed itself if supply chains collapse?</div><div class="mth-card-src">FAO, World Bank Agricultural Data</div></div>
+        <div class="mth-card"><div class="mth-card-name">Resource Independence</div><div class="mth-card-desc">Energy self-sufficiency (oil, gas, renewables), water security, critical mineral access.</div><div class="mth-card-src">IEA, World Bank</div></div>
+        <div class="mth-card"><div class="mth-card-name">Military Strength</div><div class="mth-card-desc">Conventional defense capability. Ability to defend borders without external support.</div><div class="mth-card-src">Global Firepower Index 2025</div></div>
+        <div class="mth-card"><div class="mth-card-name">Nuclear Deterrence</div><div class="mth-card-desc">Possession of nuclear weapons or credible membership in a nuclear umbrella (NATO, ANZUS, etc.).</div><div class="mth-card-src">Arms Control Association</div></div>
+        <div class="mth-card"><div class="mth-card-name">Technology Level</div><div class="mth-card-desc">Infrastructure resilience, digital economy depth, industrial capacity and self-sufficiency.</div><div class="mth-card-src">WEF Global Competitiveness Index</div></div>
+        <div class="mth-card"><div class="mth-card-name">Climate Habitability</div><div class="mth-card-desc">Long-term climate stability. Absence of extreme weather, drought, or heat risks.</div><div class="mth-card-src">Notre Dame Global Adaptation Index</div></div>
+        <div class="mth-card"><div class="mth-card-name">Geographic Distance</div><div class="mth-card-desc">Physical and strategic distance from the Middle East conflict epicenter. Islands score highest.</div><div class="mth-card-src">Geospatial analysis</div></div>
+        <div class="mth-card"><div class="mth-card-name">Neighbor Stability</div><div class="mth-card-desc">Stability of bordering countries. Stable neighbors reduce contagion risk drastically.</div><div class="mth-card-src">Fund for Peace Fragile States Index</div></div>
+        <div class="mth-card"><div class="mth-card-name">Political Stability</div><div class="mth-card-desc">Rule of law, governance quality, absence of civil conflict. Democracy index and corruption scores.</div><div class="mth-card-src">EIU Democracy Index, World Bank Governance</div></div>
+        <div class="mth-card"><div class="mth-card-name">Terrorism Risk</div><div class="mth-card-desc">Historical terrorist attack frequency and severity. Countries with known sleeper cell presence score lower.</div><div class="mth-card-src">Global Terrorism Index (IEP 2025)</div></div>
+        <div class="mth-card"><div class="mth-card-name">Immigration Access</div><div class="mth-card-desc">Ease of obtaining residence permit or long-stay visa. How accessible is the country to outsiders?</div><div class="mth-card-src">Henley Passport Index, OECD Migration Outlook</div></div>
+        <div class="mth-card"><div class="mth-card-name">Cost of Living</div><div class="mth-card-desc">Affordability relative to global average. Higher score = lower cost = better score.</div><div class="mth-card-src">Numbeo Cost of Living Index 2025</div></div>
+        <div class="mth-card"><div class="mth-card-name">Economic Resilience</div><div class="mth-card-desc">GDP per capita, diversification, low external debt. Can the economy absorb global shocks?</div><div class="mth-card-src">IMF World Economic Outlook 2025</div></div>
+        <div class="mth-card"><div class="mth-card-name">Population Density</div><div class="mth-card-desc">Lower density means more resources per capita in crisis scenarios. Less crowding = more resilience.</div><div class="mth-card-src">UN Population Division</div></div>
+      </div>
+    </div>
+
+    <div class="mth-section">
+      <div class="mth-h2">Scenario Weights</div>
+      <div class="wt-cols">
+        <div>
+          <div class="wt-label" style="color:var(--green)">Short-term refuge (months)</div>
+          <div class="wt-row"><span>Geographic Distance</span><span class="wt-pct">20%</span></div>
+          <div class="wt-row"><span>Food Security</span><span class="wt-pct">15%</span></div>
+          <div class="wt-row"><span>Political Stability</span><span class="wt-pct">15%</span></div>
+          <div class="wt-row"><span>Neighbor Stability</span><span class="wt-pct">12%</span></div>
+          <div class="wt-row"><span>Military Strength</span><span class="wt-pct">10%</span></div>
+          <div class="wt-row"><span>Terrorism Risk</span><span class="wt-pct">10%</span></div>
+          <div class="wt-row"><span>Resource Independence</span><span class="wt-pct">8%</span></div>
+          <div class="wt-row"><span>Nuclear Deterrence</span><span class="wt-pct">5%</span></div>
+          <div class="wt-row"><span>Climate Habitability</span><span class="wt-pct">5%</span></div>
+        </div>
+        <div>
+          <div class="wt-label" style="color:var(--yellow)">Long-term relocation (years)</div>
+          <div class="wt-row"><span>Immigration Access</span><span class="wt-pct">15%</span></div>
+          <div class="wt-row"><span>Political Stability</span><span class="wt-pct">13%</span></div>
+          <div class="wt-row"><span>Cost of Living</span><span class="wt-pct">12%</span></div>
+          <div class="wt-row"><span>Economic Resilience</span><span class="wt-pct">10%</span></div>
+          <div class="wt-row"><span>Food Security</span><span class="wt-pct">10%</span></div>
+          <div class="wt-row"><span>Geographic Distance</span><span class="wt-pct">9%</span></div>
+          <div class="wt-row"><span>Climate Habitability</span><span class="wt-pct">9%</span></div>
+          <div class="wt-row"><span>Terrorism Risk</span><span class="wt-pct">8%</span></div>
+          <div class="wt-row"><span>Neighbor Stability</span><span class="wt-pct">7%</span></div>
+          <div class="wt-row"><span>Military Strength</span><span class="wt-pct">4%</span></div>
+          <div class="wt-row"><span>Resource Independence</span><span class="wt-pct">3%</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mth-section">
+      <div class="disclaimer"><strong>Disclaimer:</strong> This index is for educational and informational purposes only. Scores are based on publicly available data and involve subjective weighting. They do not constitute financial, legal, immigration, or travel advice. Geopolitical situations change rapidly. Always consult official sources and qualified professionals before making relocation decisions.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── SIDE PANEL ── -->
+<div id="panel">
+  <div class="panel-close"><button onclick="closePanel()" title="Close">✕</button></div>
+  <div class="panel-body" id="panel-body"></div>
+</div>
+
+<script>
+// ─── DATA ────────────────────────────────────────────────────────────────────
+const COUNTRIES = {
+  '840': { name:'United States', region:'Americas', food:9, resource:9, military:10, nuclear:10, tech:10, climate:6, geography:8, neighbors:8, stability:5, terrorism:5, immigration:4, cost:4, economy:9, density:7 },
+  '124': { name:'Canada', region:'Americas', food:9, resource:9, military:6, nuclear:7, tech:8, climate:5, geography:8, neighbors:8, stability:8, terrorism:7, immigration:6, cost:6, economy:8, density:9 },
+  '036': { name:'Australia', region:'Oceania', food:9, resource:9, military:7, nuclear:6, tech:8, climate:6, geography:9, neighbors:8, stability:8, terrorism:7, immigration:5, cost:4, economy:8, density:10 },
+  '554': { name:'New Zealand', region:'Oceania', food:9, resource:7, military:4, nuclear:5, tech:8, climate:8, geography:10, neighbors:9, stability:9, terrorism:9, immigration:5, cost:4, economy:8, density:10 },
+  '356': { name:'India', region:'Asia', food:7, resource:6, military:8, nuclear:8, tech:7, climate:4, geography:5, neighbors:4, stability:5, terrorism:4, immigration:3, cost:9, economy:7, density:2 },
+  '156': { name:'China', region:'Asia', food:7, resource:7, military:9, nuclear:9, tech:9, climate:5, geography:6, neighbors:5, stability:6, terrorism:7, immigration:2, cost:7, economy:7, density:4 },
+  '643': { name:'Russia', region:'Europe', food:8, resource:10, military:9, nuclear:10, tech:6, climate:3, geography:5, neighbors:3, stability:3, terrorism:5, immigration:5, cost:8, economy:3, density:9 },
+  '076': { name:'Brazil', region:'Americas', food:9, resource:8, military:6, nuclear:4, tech:6, climate:5, geography:9, neighbors:7, stability:4, terrorism:8, immigration:7, cost:8, economy:5, density:7 },
+  '276': { name:'Germany', region:'Europe', food:7, resource:5, military:6, nuclear:6, tech:9, climate:7, geography:6, neighbors:7, stability:7, terrorism:5, immigration:5, cost:5, economy:8, density:5 },
+  '250': { name:'France', region:'Europe', food:8, resource:6, military:8, nuclear:9, tech:8, climate:7, geography:7, neighbors:6, stability:6, terrorism:3, immigration:5, cost:5, economy:7, density:6 },
+  '826': { name:'United Kingdom', region:'Europe', food:6, resource:6, military:8, nuclear:9, tech:8, climate:6, geography:8, neighbors:7, stability:7, terrorism:4, immigration:4, cost:4, economy:7, density:5 },
+  '380': { name:'Italy', region:'Europe', food:7, resource:4, military:6, nuclear:5, tech:7, climate:7, geography:6, neighbors:6, stability:5, terrorism:5, immigration:5, cost:6, economy:5, density:5 },
+  '724': { name:'Spain', region:'Europe', food:7, resource:5, military:6, nuclear:5, tech:7, climate:8, geography:7, neighbors:7, stability:7, terrorism:4, immigration:6, cost:7, economy:6, density:6 },
+  '620': { name:'Portugal', region:'Europe', food:6, resource:5, military:5, nuclear:5, tech:7, climate:8, geography:8, neighbors:7, stability:8, terrorism:8, immigration:7, cost:7, economy:6, density:7 },
+  '528': { name:'Netherlands', region:'Europe', food:7, resource:5, military:6, nuclear:5, tech:8, climate:6, geography:6, neighbors:7, stability:8, terrorism:5, immigration:5, cost:4, economy:8, density:3 },
+  '752': { name:'Sweden', region:'Europe', food:7, resource:7, military:6, nuclear:5, tech:9, climate:5, geography:7, neighbors:7, stability:8, terrorism:4, immigration:5, cost:3, economy:8, density:8 },
+  '578': { name:'Norway', region:'Europe', food:7, resource:9, military:6, nuclear:6, tech:8, climate:5, geography:8, neighbors:8, stability:9, terrorism:8, immigration:5, cost:2, economy:9, density:9 },
+  '208': { name:'Denmark', region:'Europe', food:8, resource:7, military:6, nuclear:5, tech:8, climate:6, geography:7, neighbors:7, stability:9, terrorism:6, immigration:5, cost:4, economy:8, density:7 },
+  '246': { name:'Finland', region:'Europe', food:7, resource:7, military:7, nuclear:5, tech:9, climate:4, geography:6, neighbors:5, stability:9, terrorism:8, immigration:5, cost:5, economy:8, density:9 },
+  '756': { name:'Switzerland', region:'Europe', food:6, resource:5, military:6, nuclear:5, tech:9, climate:7, geography:7, neighbors:8, stability:10, terrorism:8, immigration:3, cost:2, economy:9, density:7 },
+  '040': { name:'Austria', region:'Europe', food:6, resource:5, military:4, nuclear:5, tech:8, climate:7, geography:7, neighbors:7, stability:8, terrorism:6, immigration:4, cost:4, economy:8, density:7 },
+  '203': { name:'Czech Republic', region:'Europe', food:7, resource:5, military:5, nuclear:4, tech:7, climate:7, geography:7, neighbors:7, stability:7, terrorism:8, immigration:6, cost:7, economy:7, density:7 },
+  '703': { name:'Slovakia', region:'Europe', food:7, resource:5, military:5, nuclear:4, tech:6, climate:7, geography:7, neighbors:6, stability:7, terrorism:8, immigration:6, cost:7, economy:6, density:7 },
+  '705': { name:'Slovenia', region:'Europe', food:6, resource:5, military:4, nuclear:4, tech:7, climate:7, geography:7, neighbors:7, stability:8, terrorism:8, immigration:5, cost:6, economy:7, density:7 },
+  '191': { name:'Croatia', region:'Europe', food:7, resource:5, military:4, nuclear:4, tech:6, climate:8, geography:7, neighbors:6, stability:7, terrorism:8, immigration:6, cost:7, economy:5, density:7 },
+  '348': { name:'Hungary', region:'Europe', food:7, resource:5, military:4, nuclear:4, tech:6, climate:7, geography:7, neighbors:6, stability:6, terrorism:8, immigration:6, cost:7, economy:6, density:7 },
+  '616': { name:'Poland', region:'Europe', food:8, resource:6, military:7, nuclear:5, tech:7, climate:6, geography:5, neighbors:4, stability:7, terrorism:8, immigration:6, cost:7, economy:7, density:6 },
+  '642': { name:'Romania', region:'Europe', food:7, resource:5, military:5, nuclear:4, tech:6, climate:7, geography:6, neighbors:5, stability:6, terrorism:8, immigration:6, cost:8, economy:6, density:7 },
+  '100': { name:'Bulgaria', region:'Europe', food:7, resource:5, military:5, nuclear:4, tech:6, climate:7, geography:6, neighbors:5, stability:6, terrorism:7, immigration:6, cost:8, economy:5, density:7 },
+  '300': { name:'Greece', region:'Europe', food:6, resource:4, military:6, nuclear:5, tech:6, climate:8, geography:6, neighbors:4, stability:5, terrorism:6, immigration:5, cost:7, economy:4, density:6 },
+  '233': { name:'Estonia', region:'Europe', food:6, resource:5, military:6, nuclear:4, tech:8, climate:5, geography:4, neighbors:3, stability:8, terrorism:8, immigration:6, cost:7, economy:7, density:9 },
+  '428': { name:'Latvia', region:'Europe', food:6, resource:5, military:5, nuclear:4, tech:7, climate:5, geography:4, neighbors:3, stability:7, terrorism:8, immigration:6, cost:7, economy:6, density:9 },
+  '440': { name:'Lithuania', region:'Europe', food:7, resource:5, military:6, nuclear:4, tech:7, climate:5, geography:4, neighbors:3, stability:7, terrorism:8, immigration:6, cost:7, economy:6, density:9 },
+  '372': { name:'Ireland', region:'Europe', food:7, resource:6, military:4, nuclear:5, tech:7, climate:5, geography:8, neighbors:7, stability:8, terrorism:7, immigration:5, cost:4, economy:7, density:8 },
+  '442': { name:'Luxembourg', region:'Europe', food:5, resource:4, military:3, nuclear:5, tech:8, climate:6, geography:7, neighbors:8, stability:9, terrorism:7, immigration:4, cost:3, economy:10, density:7 },
+  '352': { name:'Iceland', region:'Europe', food:6, resource:8, military:3, nuclear:5, tech:8, climate:5, geography:9, neighbors:9, stability:9, terrorism:10, immigration:5, cost:2, economy:8, density:10 },
+  '792': { name:'Turkey', region:'Middle East', food:7, resource:5, military:8, nuclear:5, tech:6, climate:7, geography:4, neighbors:3, stability:4, terrorism:3, immigration:7, cost:8, economy:4, density:5 },
+  '804': { name:'Ukraine', region:'Europe', food:8, resource:6, military:7, nuclear:3, tech:6, climate:6, geography:2, neighbors:2, stability:2, terrorism:6, immigration:7, cost:9, economy:2, density:7 },
+  '112': { name:'Belarus', region:'Europe', food:7, resource:5, military:5, nuclear:4, tech:5, climate:5, geography:5, neighbors:3, stability:2, terrorism:8, immigration:5, cost:8, economy:3, density:7 },
+  '498': { name:'Moldova', region:'Europe', food:7, resource:4, military:2, nuclear:3, tech:5, climate:7, geography:4, neighbors:3, stability:5, terrorism:8, immigration:8, cost:9, economy:4, density:7 },
+  '688': { name:'Serbia', region:'Europe', food:7, resource:5, military:5, nuclear:4, tech:6, climate:7, geography:6, neighbors:5, stability:6, terrorism:7, immigration:8, cost:8, economy:5, density:7 },
+  '376': { name:'Israel', region:'Middle East', food:6, resource:5, military:9, nuclear:8, tech:9, climate:5, geography:1, neighbors:1, stability:5, terrorism:2, immigration:4, cost:3, economy:7, density:4 },
+  '364': { name:'Iran', region:'Middle East', food:6, resource:8, military:7, nuclear:5, tech:5, climate:4, geography:1, neighbors:2, stability:2, terrorism:2, immigration:3, cost:8, economy:2, density:5 },
+  '784': { name:'UAE', region:'Middle East', food:2, resource:8, military:5, nuclear:3, tech:8, climate:3, geography:2, neighbors:2, stability:6, terrorism:4, immigration:7, cost:3, economy:7, density:5 },
+  '682': { name:'Saudi Arabia', region:'Middle East', food:2, resource:9, military:6, nuclear:4, tech:5, climate:2, geography:2, neighbors:2, stability:5, terrorism:3, immigration:4, cost:5, economy:6, density:8 },
+  '400': { name:'Jordan', region:'Middle East', food:3, resource:3, military:5, nuclear:3, tech:5, climate:4, geography:3, neighbors:2, stability:6, terrorism:4, immigration:6, cost:7, economy:4, density:5 },
+  '422': { name:'Lebanon', region:'Middle East', food:3, resource:2, military:3, nuclear:2, tech:5, climate:6, geography:2, neighbors:1, stability:1, terrorism:2, immigration:5, cost:7, economy:1, density:4 },
+  '818': { name:'Egypt', region:'Africa', food:4, resource:5, military:7, nuclear:3, tech:5, climate:3, geography:4, neighbors:3, stability:4, terrorism:3, immigration:6, cost:8, economy:3, density:4 },
+  '504': { name:'Morocco', region:'Africa', food:5, resource:5, military:5, nuclear:3, tech:5, climate:6, geography:6, neighbors:5, stability:6, terrorism:5, immigration:6, cost:8, economy:5, density:6 },
+  '788': { name:'Tunisia', region:'Africa', food:5, resource:4, military:4, nuclear:3, tech:5, climate:7, geography:5, neighbors:3, stability:5, terrorism:4, immigration:6, cost:8, economy:4, density:6 },
+  '012': { name:'Algeria', region:'Africa', food:5, resource:7, military:6, nuclear:3, tech:4, climate:3, geography:5, neighbors:4, stability:5, terrorism:4, immigration:4, cost:8, economy:4, density:8 },
+  '710': { name:'South Africa', region:'Africa', food:7, resource:7, military:5, nuclear:4, tech:6, climate:7, geography:8, neighbors:6, stability:4, terrorism:6, immigration:6, cost:8, economy:4, density:7 },
+  '404': { name:'Kenya', region:'Africa', food:5, resource:5, military:4, nuclear:3, tech:5, climate:5, geography:7, neighbors:3, stability:4, terrorism:3, immigration:6, cost:8, economy:4, density:6 },
+  '410': { name:'South Korea', region:'Asia', food:5, resource:5, military:8, nuclear:6, tech:9, climate:6, geography:5, neighbors:4, stability:7, terrorism:9, immigration:4, cost:5, economy:8, density:4 },
+  '392': { name:'Japan', region:'Asia', food:5, resource:4, military:7, nuclear:5, tech:10, climate:6, geography:7, neighbors:5, stability:8, terrorism:9, immigration:3, cost:5, economy:8, density:4 },
+  '702': { name:'Singapore', region:'Asia', food:3, resource:3, military:7, nuclear:5, tech:10, climate:5, geography:6, neighbors:6, stability:9, terrorism:8, immigration:5, cost:3, economy:9, density:3 },
+  '458': { name:'Malaysia', region:'Asia', food:7, resource:7, military:5, nuclear:4, tech:7, climate:4, geography:7, neighbors:6, stability:6, terrorism:5, immigration:6, cost:7, economy:6, density:6 },
+  '764': { name:'Thailand', region:'Asia', food:8, resource:6, military:5, nuclear:4, tech:6, climate:5, geography:7, neighbors:5, stability:5, terrorism:5, immigration:6, cost:8, economy:6, density:5 },
+  '704': { name:'Vietnam', region:'Asia', food:8, resource:6, military:6, nuclear:4, tech:6, climate:5, geography:7, neighbors:5, stability:6, terrorism:8, immigration:6, cost:9, economy:6, density:5 },
+  '360': { name:'Indonesia', region:'Asia', food:8, resource:8, military:6, nuclear:4, tech:5, climate:4, geography:6, neighbors:6, stability:5, terrorism:4, immigration:5, cost:8, economy:6, density:5 },
+  '608': { name:'Philippines', region:'Asia', food:7, resource:6, military:4, nuclear:4, tech:6, climate:4, geography:6, neighbors:5, stability:4, terrorism:4, immigration:6, cost:8, economy:5, density:4 },
+  '398': { name:'Kazakhstan', region:'Asia', food:7, resource:8, military:5, nuclear:4, tech:5, climate:4, geography:6, neighbors:5, stability:5, terrorism:6, immigration:7, cost:8, economy:6, density:9 },
+  '496': { name:'Mongolia', region:'Asia', food:6, resource:7, military:3, nuclear:4, tech:4, climate:3, geography:7, neighbors:5, stability:6, terrorism:9, immigration:7, cost:8, economy:4, density:10 },
+  '268': { name:'Georgia', region:'Asia', food:7, resource:5, military:3, nuclear:3, tech:6, climate:8, geography:5, neighbors:4, stability:6, terrorism:7, immigration:9, cost:9, economy:5, density:8 },
+  '051': { name:'Armenia', region:'Asia', food:6, resource:4, military:5, nuclear:3, tech:6, climate:6, geography:4, neighbors:3, stability:5, terrorism:7, immigration:8, cost:9, economy:4, density:6 },
+  '586': { name:'Pakistan', region:'Asia', food:5, resource:5, military:7, nuclear:8, tech:4, climate:3, geography:3, neighbors:2, stability:2, terrorism:2, immigration:4, cost:9, economy:2, density:4 },
+  '050': { name:'Bangladesh', region:'Asia', food:6, resource:4, military:4, nuclear:3, tech:4, climate:3, geography:4, neighbors:4, stability:4, terrorism:3, immigration:5, cost:9, economy:4, density:2 },
+  '484': { name:'Mexico', region:'Americas', food:7, resource:7, military:4, nuclear:4, tech:6, climate:6, geography:8, neighbors:6, stability:3, terrorism:6, immigration:7, cost:8, economy:5, density:6 },
+  '170': { name:'Colombia', region:'Americas', food:8, resource:7, military:5, nuclear:4, tech:5, climate:6, geography:9, neighbors:6, stability:5, terrorism:5, immigration:7, cost:9, economy:5, density:7 },
+  '604': { name:'Peru', region:'Americas', food:7, resource:7, military:4, nuclear:4, tech:5, climate:6, geography:9, neighbors:6, stability:4, terrorism:7, immigration:7, cost:9, economy:5, density:8 },
+  '032': { name:'Argentina', region:'Americas', food:9, resource:7, military:4, nuclear:4, tech:6, climate:6, geography:9, neighbors:7, stability:4, terrorism:8, immigration:7, cost:8, economy:3, density:8 },
+  '152': { name:'Chile', region:'Americas', food:7, resource:7, military:5, nuclear:4, tech:7, climate:7, geography:9, neighbors:7, stability:7, terrorism:8, immigration:6, cost:7, economy:6, density:8 },
+  '858': { name:'Uruguay', region:'Americas', food:8, resource:6, military:3, nuclear:4, tech:7, climate:7, geography:9, neighbors:7, stability:8, terrorism:9, immigration:7, cost:7, economy:6, density:9 },
+  '068': { name:'Bolivia', region:'Americas', food:7, resource:7, military:3, nuclear:4, tech:4, climate:5, geography:9, neighbors:6, stability:4, terrorism:8, immigration:7, cost:9, economy:4, density:9 },
+  '218': { name:'Ecuador', region:'Americas', food:8, resource:7, military:3, nuclear:4, tech:5, climate:6, geography:9, neighbors:6, stability:4, terrorism:7, immigration:7, cost:8, economy:4, density:7 },
+  '600': { name:'Paraguay', region:'Americas', food:8, resource:7, military:3, nuclear:4, tech:4, climate:5, geography:9, neighbors:7, stability:6, terrorism:8, immigration:8, cost:9, economy:5, density:9 },
+  '188': { name:'Costa Rica', region:'Americas', food:7, resource:6, military:2, nuclear:4, tech:6, climate:7, geography:9, neighbors:7, stability:8, terrorism:9, immigration:7, cost:8, economy:6, density:7 },
+  '591': { name:'Panama', region:'Americas', food:6, resource:6, military:2, nuclear:4, tech:6, climate:6, geography:9, neighbors:6, stability:7, terrorism:7, immigration:7, cost:7, economy:6, density:7 },
+  '192': { name:'Cuba', region:'Americas', food:5, resource:5, military:4, nuclear:3, tech:4, climate:7, geography:9, neighbors:6, stability:6, terrorism:9, immigration:4, cost:8, economy:2, density:7 },
+  '214': { name:'Dominican Republic', region:'Americas', food:6, resource:5, military:3, nuclear:3, tech:5, climate:6, geography:9, neighbors:6, stability:5, terrorism:8, immigration:7, cost:8, economy:5, density:6 },
+  '566': { name:'Nigeria', region:'Africa', food:6, resource:7, military:5, nuclear:3, tech:4, climate:4, geography:7, neighbors:3, stability:2, terrorism:2, immigration:5, cost:8, economy:3, density:4 },
+  '231': { name:'Ethiopia', region:'Africa', food:4, resource:5, military:4, nuclear:3, tech:3, climate:4, geography:5, neighbors:3, stability:2, terrorism:4, immigration:6, cost:9, economy:2, density:5 },
+};
+
+const WEIGHTS = {
+  short: { geography:.20, food:.15, stability:.15, neighbors:.12, military:.10, terrorism:.10, resource:.08, nuclear:.05, climate:.05 },
+  long:  { immigration:.15, stability:.13, cost:.12, economy:.10, food:.10, geography:.09, climate:.09, terrorism:.08, neighbors:.07, military:.04, resource:.03 }
+};
+
+const PARAM_LABELS = {
+  food:'Food Security', resource:'Resource Independence', military:'Military Strength',
+  nuclear:'Nuclear Deterrence', tech:'Technology', climate:'Climate Habitability',
+  geography:'Geographic Distance', neighbors:'Neighbor Stability',
+  stability:'Political Stability', terrorism:'Terrorism Risk',
+  immigration:'Immigration Access', cost:'Cost of Living',
+  economy:'Economic Resilience', density:'Population Density'
+};
+
+const PARAM_DESCS = {
+  food:'Domestic agricultural self-sufficiency',
+  resource:'Energy & mineral independence',
+  military:'Conventional defense capability',
+  nuclear:'Nuclear weapons or credible umbrella',
+  tech:'Industrial & digital infrastructure',
+  climate:'Long-term habitability & weather stability',
+  geography:'Distance from Middle East conflict zone',
+  neighbors:'Stability of bordering countries',
+  stability:'Rule of law, governance, civil peace',
+  terrorism:'Low historical terrorism frequency',
+  immigration:'Ease of obtaining legal residency',
+  cost:'Affordability (higher score = cheaper)',
+  economy:'GDP resilience & diversification',
+  density:'Low population density (resource buffer)'
+};
+
+let currentMode = 'long';
+
+function computeScore(c, mode) {
+  const w = WEIGHTS[mode];
+  let s = 0, t = 0;
+  for (const [k, wt] of Object.entries(w)) {
+    if (c[k] !== undefined) { s += c[k] * wt; t += wt; }
+  }
+  return t > 0 ? s / t : 0;
+}
+
+function getColor(score) {
+  if (score >= 8)   return '#16a34a';
+  if (score >= 6.5) return '#65a30d';
+  if (score >= 5.5) return '#ca8a04';
+  if (score >= 4)   return '#ea580c';
+  return '#dc2626';
+}
+
+function getVerdict(score, mode) {
+  if (score >= 8)   return { cls:'v-green',  text: mode==='short' ? 'Excellent short-term refuge — high stability, far from conflict zones.' : 'Top-tier relocation destination — stable, accessible, affordable.' };
+  if (score >= 6.5) return { cls:'v-yellow', text: mode==='short' ? 'Good option. Some risk factors but manageable for a months-long stay.' : 'Solid long-term destination with minor trade-offs.' };
+  if (score >= 5)   return { cls:'v-orange', text: mode==='short' ? 'Marginal. Notable risks — consider only if better options unavailable.' : 'Viable but with significant compromises. Research carefully.' };
+  return { cls:'v-red', text: mode==='short' ? 'High risk. Avoid as refuge — proximity to conflict or internal instability.' : 'Not recommended — structural or security issues.' };
+}
+
+// ─── MAP ─────────────────────────────────────────────────────────────────────
+let world, svg, path, projection;
+let selectedId = null;
+
+async function initMap() {
+  world = await d3.json('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json');
+  const container = document.getElementById('map-container');
+  const W = container.clientWidth, H = container.clientHeight;
+
+  projection = d3.geoNaturalEarth1().scale(W / 6.2).translate([W/2, H/2]);
+  path = d3.geoPath().projection(projection);
+
+  svg = d3.select('#map-container').append('svg').attr('width', W).attr('height', H);
+
+  svg.append('path').datum({type:'Sphere'}).attr('class','sphere').attr('d', path);
+  svg.append('path').datum(d3.geoGraticule()()).attr('class','graticule').attr('d', path);
+
+  const features = topojson.feature(world, world.objects.countries).features;
+
+  svg.selectAll('.country')
+    .data(features).enter().append('path')
+    .attr('class', d => 'country' + (COUNTRIES[d.id] ? '' : ' no-data'))
+    .attr('d', path)
+    .attr('fill', d => {
+      const c = COUNTRIES[d.id];
+      return c ? getColor(computeScore(c, currentMode)) : '#1a1d26';
+    })
+    .on('mousemove', function(ev, d) {
+      const c = COUNTRIES[d.id];
+      const tt = document.getElementById('tt');
+      document.getElementById('tt-name').textContent = c ? c.name : (d.properties?.name || 'Unknown country');
+      const body = document.getElementById('tt-body');
+      if (c) {
+        const sc = computeScore(c, currentMode);
+        body.innerHTML = `<div class="tt-score" style="color:${getColor(sc)}">${sc.toFixed(1)}<span style="color:#4a5568;font-size:10px;font-weight:400"> / 10</span></div>`;
+      } else {
+        body.innerHTML = `<div class="tt-nodata">No data available</div>`;
+      }
+      tt.style.left = (ev.offsetX + 14) + 'px';
+      tt.style.top  = (ev.offsetY - 12) + 'px';
+      tt.style.opacity = 1;
+    })
+    .on('mouseleave', () => { document.getElementById('tt').style.opacity = 0; })
+    .on('click', function(ev, d) {
+      const c = COUNTRIES[d.id];
+      if (!c) return;
+      svg.selectAll('.country').classed('selected', false);
+      d3.select(this).classed('selected', true);
+      selectedId = d.id;
+      openPanel(c);
+    });
+
+  svg.on('click', function(ev) {
+    if (ev.target.tagName === 'svg' || ev.target.classList.contains('sphere')) closePanel();
+  });
+
+  const zoom = d3.zoom().scaleExtent([0.8, 10]).on('zoom', e => {
+    svg.selectAll('path').attr('transform', e.transform);
+  });
+  svg.call(zoom);
+}
+
+function refreshMapColors() {
+  if (!svg) return;
+  svg.selectAll('.country:not(.no-data)').attr('fill', d => {
+    const c = COUNTRIES[d.id];
+    return c ? getColor(computeScore(c, currentMode)) : '#1a1d26';
+  });
+  if (selectedId && COUNTRIES[selectedId]) openPanel(COUNTRIES[selectedId]);
+}
+
+function openPanel(c) {
+  const score = computeScore(c, currentMode);
+  const verdict = getVerdict(score, currentMode);
+  const w = WEIGHTS[currentMode];
+
+  const params = Object.entries(PARAM_LABELS).map(([k, label]) => {
+    const v = c[k]; if (v === undefined) return '';
+    const inWeight = k in w;
+    const pct = (v / 10 * 100).toFixed(0);
+    return `<div class="param-row">
+      <div class="param-top">
+        <span class="param-name">${label}${inWeight ? '' : ' <span style="font-size:10px;opacity:.5">(context)</span>'}</span>
+        <span class="param-val" style="color:${getColor(v)}">${v}/10</span>
+      </div>
+      <div class="param-track"><div class="param-fill" style="width:${pct}%;background:${getColor(v)}"></div></div>
+      <div class="param-sub">${PARAM_DESCS[k]}</div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('panel-body').innerHTML = `
+    <div class="panel-country">${c.name}</div>
+    <div class="panel-region">${c.region}</div>
+    <div class="score-ring-wrap">
+      <div class="panel-score-num" style="color:${getColor(score)}">${score.toFixed(1)}</div>
+      <div class="panel-score-denom">/10</div>
+    </div>
+    <div class="panel-mode-label">${currentMode === 'short' ? 'Short-term refuge score' : 'Long-term relocation score'}</div>
+    <div class="verdict ${verdict.cls}">${verdict.text}</div>
+    <div class="divider"></div>
+    <div class="params-heading">Parameter breakdown</div>
+    ${params}
+  `;
+  document.getElementById('panel').classList.add('open');
+}
+
+function closePanel() {
+  document.getElementById('panel').classList.remove('open');
+  if (svg) svg.selectAll('.country').classed('selected', false);
+  selectedId = null;
+}
+
+// ─── TABLE ────────────────────────────────────────────────────────────────────
+let sortKey = 'score', sortDir = -1;
+
+function buildTable() {
+  const q = (document.getElementById('tbl-search')?.value || '').toLowerCase();
+  const rows = Object.entries(COUNTRIES)
+    .map(([id, c]) => ({ id, ...c, score: computeScore(c, currentMode) }))
+    .filter(r => r.name.toLowerCase().includes(q))
+    .sort((a, b) => sortDir * ((a[sortKey] ?? 0) < (b[sortKey] ?? 0) ? -1 : 1));
+
+  document.getElementById('tbl-count').textContent = `· ${rows.length} countries`;
+
+  document.getElementById('tbl-body').innerHTML = rows.map((r, i) => {
+    const col = getColor(r.score);
+    return `<tr onclick="jumpTo('${r.id}')">
+      <td class="rank">${i+1}</td>
+      <td class="cname">${r.name}</td>
+      <td class="creg">${r.region}</td>
+      <td>
+        <span class="spill" style="background:${col}18;color:${col}">${r.score.toFixed(1)}</span>
+        <span class="mbar-bg"><span class="mbar" style="width:${(r.score/10*100).toFixed(0)}%;background:${col}"></span></span>
+      </td>
+      <td class="param-cell">${r.food}</td>
+      <td class="param-cell">${r.military}</td>
+      <td class="param-cell">${r.stability}</td>
+      <td class="param-cell">${r.immigration}</td>
+      <td class="param-cell">${r.cost}</td>
+    </tr>`;
+  }).join('');
+}
+
+function sortTable(k) {
+  if (sortKey === k) sortDir *= -1; else { sortKey = k; sortDir = -1; }
+  document.querySelectorAll('thead th').forEach(th => th.classList.remove('sort-asc','sort-desc'));
+  const keys = ['rank','name','region','score','food','military','stability','immigration','cost'];
+  const th = document.querySelectorAll('thead th')[keys.indexOf(k)];
+  if (th) th.classList.add(sortDir === -1 ? 'sort-desc' : 'sort-asc');
+  buildTable();
+}
+
+function jumpTo(id) {
+  showView('map');
+  const c = COUNTRIES[id];
+  if (c && svg) {
+    svg.selectAll('.country').classed('selected', false);
+    svg.selectAll('.country').filter(d => String(d.id) === String(id)).classed('selected', true);
+    selectedId = id;
+    openPanel(c);
+  }
+}
+
+// ─── VIEW SWITCHING ───────────────────────────────────────────────────────────
+const VIEW_IDS = ['map', 'table', 'method'];
+
+function showView(name) {
+  VIEW_IDS.forEach(v => {
+    const el = document.getElementById(v + '-view');
+    if (el) el.style.display = (v === name) ? (v === 'map' ? 'block' : 'block') : 'none';
+  });
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    t.classList.toggle('active', VIEW_IDS[i] === name);
+  });
+  if (name === 'table') buildTable();
+  if (name !== 'map') closePanel();
+}
+
+function setMode(mode, el) {
+  currentMode = mode;
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  refreshMapColors();
+  if (document.getElementById('table-view').style.display === 'block') buildTable();
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+showView('map');
+initMap();
+</script>
+</body>
+</html>
