@@ -161,8 +161,8 @@ def build_scores(wb: dict, numbeo: dict, manual: dict) -> dict:
         # ── Population Density ─────────────────────────────────────────────
         density = norm_pop_density(w.get("pop_density"))
 
-        # ── Food Security ──────────────────────────────────────────────────
-        food = norm_food(w.get("food_idx"))
+        # ── Food Security ── manual overrides auto (WB Food Production Index is unreliable)
+        food = m.get("food") or norm_food(w.get("food_idx"))
 
         # ── Technology ─────────────────────────────────────────────────────
         tech = norm_internet(w.get("internet"))
@@ -190,8 +190,8 @@ def build_scores(wb: dict, numbeo: dict, manual: dict) -> dict:
         else:
             cost = None  # no good free API fallback
 
-        # ── Military (proxy: expenditure % GDP) ───────────────────────────
-        military = norm_military_exp(w.get("military_exp"))
+        # ── Military ── manual overrides auto (% GDP is a poor capability proxy)
+        military = m.get("military") or norm_military_exp(w.get("military_exp"))
 
         # ── Terrorism: no free API → use manual if available ───────────────
         terrorism = m.get("terrorism")  # set manually from GPI CSV if loaded
